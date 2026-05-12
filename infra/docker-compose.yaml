@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: micocards-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: micocards
+      POSTGRES_PASSWORD: micocards
+      POSTGRES_DB: micocards
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U micocards -d micocards"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: micocards_postgres_data

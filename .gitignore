@@ -1,0 +1,38 @@
+# OS / editor
+.DS_Store
+.idea/
+*.swp
+*.swo
+*.suo
+
+# Logs
+*.log
+logs/
+
+# Env (real values only — *.example is tracked)
+.env
+.env.local
+.env.*.local
+
+# Agent workflow / tooling artifacts
+.agent/
+.claude/
+.codex/
+.playwright-mcp/
+.task-input.md
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+build/
+dev-dist/
+*.tsbuildinfo
+pnpm-debug.log*
+
+# Go (backend)
+backend/bin/
+backend/cov*.out
+backend/coverage*.out
+*.test
+*.out

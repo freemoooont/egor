@@ -1,0 +1,933 @@
+openapi: 3.1.0
+info:
+  title: Micocards API
+  version: 0.1.0
+  summary: Backend API for the Micocards flashcard service.
+  description: |
+    REST + JSON. Auth via Authorization: Bearer <jwt>. Non-idempotent writes accept
+    an Idempotency-Key header. Status codes follow ADR 0006.
+  contact:
+    name: Micocards backend
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://v811467.hosted-by-vdsina.com
+    description: Production
+tags:
+  - name: health
+  - name: auth
+  - name: me
+  - name: decks
+  - name: cards
+  - name: practice
+  - name: progress
+
+paths:
+
+  /api/healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness probe.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: registerUser
+      summary: Register a new user.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterUserRequest" }
+      responses:
+        "201":
+          description: registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: loginUser
+      summary: Exchange email + password for tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginUserRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshAccessToken
+      summary: Rotate the refresh token and mint a new access token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: rotated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logoutUser
+      summary: Revoke the supplied refresh-token family.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/me:
+    get:
+      tags: [me]
+      operationId: getCurrentUser
+      summary: Fetch the authenticated user's profile.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+    patch:
+      tags: [me]
+      operationId: updateProfile
+      summary: Update the authenticated user's profile.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProfileRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/me/password:
+    post:
+      tags: [me]
+      operationId: changePassword
+      summary: Change the authenticated user's password.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/me/avatar:
+    post:
+      tags: [me]
+      operationId: uploadAvatar
+      summary: Upload a profile avatar (stub; returns 501 in v1).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AvatarResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks:
+    get:
+      tags: [decks]
+      operationId: listUserDecks
+      summary: List the authenticated user's decks.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeckList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/Internal" }
+    post:
+      tags: [decks]
+      operationId: createDeck
+      summary: Create a new deck (optionally with cards).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDeckRequest" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deck" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/generate:
+    post:
+      tags: [decks]
+      operationId: generateDeckWithAI
+      summary: Generate a deck draft with AI (stub; returns 501 unless AI_API_KEY is set).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateDeckRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIDeckDraftResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "501": { $ref: "#/components/responses/NotImplemented" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/{deckID}:
+    parameters:
+      - $ref: "#/components/parameters/DeckID"
+    get:
+      tags: [decks]
+      operationId: getDeck
+      summary: Get a deck by id.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deck" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+    patch:
+      tags: [decks]
+      operationId: renameDeck
+      summary: Rename a deck.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RenameDeckRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deck" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+    delete:
+      tags: [decks]
+      operationId: deleteDeck
+      summary: Soft-delete a deck.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/{deckID}/cards:
+    parameters:
+      - $ref: "#/components/parameters/DeckID"
+    post:
+      tags: [cards]
+      operationId: addCard
+      summary: Append a card to the deck.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddCardRequest" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/{deckID}/cards/{cardID}:
+    parameters:
+      - $ref: "#/components/parameters/DeckID"
+      - $ref: "#/components/parameters/CardID"
+    patch:
+      tags: [cards]
+      operationId: editCard
+      summary: Edit a card.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditCardRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+    delete:
+      tags: [cards]
+      operationId: removeCard
+      summary: Remove a card.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/{deckID}/cards/order:
+    parameters:
+      - $ref: "#/components/parameters/DeckID"
+    put:
+      tags: [cards]
+      operationId: reorderCards
+      summary: Replace the card ordering of a deck.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReorderCardsRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/{deckID}/reorder:
+    parameters:
+      - $ref: "#/components/parameters/DeckID"
+    post:
+      tags: [cards]
+      operationId: reorderCardsAlias
+      summary: Replace the card ordering of a deck (POST alias).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReorderCardsRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/auth/change-password:
+    post:
+      tags: [auth]
+      operationId: changePasswordViaAuth
+      summary: Change the authenticated user's password (alias of /api/me/password).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePasswordRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/decks/{deckID}/progress:
+    parameters:
+      - $ref: "#/components/parameters/DeckID"
+    get:
+      tags: [progress]
+      operationId: getUserDeckProgress
+      summary: Read the per-card progress for a deck.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserDeckProgress" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/practice/sessions:
+    post:
+      tags: [practice]
+      operationId: startPracticeSession
+      summary: Start a practice session over a deck.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartPracticeRequest" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/practice/sessions/{sessionID}/ratings:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [practice]
+      operationId: rateCard
+      summary: Rate a card inside a tracked session.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RateCardRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RatedCard" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/practice/sessions/{sessionID}/finish:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [practice]
+      operationId: finishPracticeSession
+      summary: Finalize the session and emit a completion event.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeResults" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /api/practice/sessions/{sessionID}/results:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [practice]
+      operationId: getPracticeResults
+      summary: Read the results of a completed session.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PracticeResults" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 128 }
+      description: Required for non-idempotent writes per ADR 0005.
+    DeckID:
+      in: path
+      name: deckID
+      required: true
+      schema: { type: string, format: uuid }
+    CardID:
+      in: path
+      name: cardID
+      required: true
+      schema: { type: string, format: uuid }
+    SessionID:
+      in: path
+      name: sessionID
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: bad request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: unauthorized
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: forbidden
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: unprocessable entity
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotImplemented:
+      description: not implemented
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: upstream failure
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Internal:
+      description: internal server error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: ["ok"] }
+
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, enum: [true] }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+
+    User:
+      type: object
+      required: [id, email, displayName, avatarRef, registeredAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        avatarRef:
+          oneOf:
+            - { type: string, enum: ["none"] }
+            - { type: string }
+        registeredAt: { type: string, format: date-time }
+
+    AuthResponse:
+      type: object
+      required: [accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt, user]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        accessTokenExpiresAt: { type: string, format: date-time }
+        refreshTokenExpiresAt: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/User" }
+
+    RegisterUserRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 8, maxLength: 128 }
+        displayName: { type: string, minLength: 1, maxLength: 64 }
+
+    LoginUserRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        displayName: { type: string, minLength: 1, maxLength: 64 }
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string, minLength: 8, maxLength: 128 }
+
+    AvatarResponse:
+      type: object
+      required: [avatarRef]
+      properties:
+        avatarRef: { type: string }
+
+    Card:
+      type: object
+      required: [id, term, definition, ordinal]
+      properties:
+        id: { type: string, format: uuid }
+        term: { type: string }
+        definition: { type: string }
+        ordinal: { type: integer, minimum: 1 }
+
+    CardList:
+      type: object
+      required: [cards]
+      properties:
+        cards:
+          type: array
+          items: { $ref: "#/components/schemas/Card" }
+
+    CardDraft:
+      type: object
+      required: [term, definition]
+      properties:
+        term: { type: string, minLength: 1, maxLength: 512 }
+        definition: { type: string, minLength: 1, maxLength: 2048 }
+
+    Deck:
+      type: object
+      required: [id, ownerId, title, cards, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        title: { type: string }
+        cards:
+          type: array
+          items: { $ref: "#/components/schemas/Card" }
+        createdAt: { type: string, format: date-time }
+
+    DeckSummary:
+      type: object
+      required: [id, title, cardCount, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        cardCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+
+    DeckList:
+      type: object
+      required: [decks]
+      properties:
+        decks:
+          type: array
+          items: { $ref: "#/components/schemas/DeckSummary" }
+        nextCursor: { type: string }
+
+    CreateDeckRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        cards:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/CardDraft" }
+
+    RenameDeckRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+
+    AddCardRequest:
+      $ref: "#/components/schemas/CardDraft"
+
+    EditCardRequest:
+      type: object
+      properties:
+        term: { type: string, minLength: 1, maxLength: 512 }
+        definition: { type: string, minLength: 1, maxLength: 2048 }
+
+    ReorderCardsRequest:
+      type: object
+      required: [orderedIds]
+      properties:
+        orderedIds:
+          type: array
+          items: { type: string, format: uuid }
+
+    GenerateDeckRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 1, maxLength: 1024 }
+
+    AIDeckDraftResponse:
+      type: object
+      required: [draft]
+      properties:
+        draft:
+          type: object
+          required: [title, cards]
+          properties:
+            title: { type: string }
+            cards:
+              type: array
+              items: { $ref: "#/components/schemas/CardDraft" }
+
+    PracticeSessionMode:
+      type: string
+      enum: [tracked, untracked]
+
+    PracticeSessionStatus:
+      type: string
+      enum: [in_progress, completed, abandoned]
+
+    StartPracticeRequest:
+      type: object
+      required: [deckId, mode]
+      properties:
+        deckId: { type: string, format: uuid }
+        mode: { $ref: "#/components/schemas/PracticeSessionMode" }
+
+    PracticeSession:
+      type: object
+      required: [id, deckId, userId, mode, status, cardIds, startedAt]
+      properties:
+        id: { type: string, format: uuid }
+        deckId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        mode: { $ref: "#/components/schemas/PracticeSessionMode" }
+        status: { $ref: "#/components/schemas/PracticeSessionStatus" }
+        cardIds:
+          type: array
+          items: { type: string, format: uuid }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+
+    CardRating:
+      type: integer
+      enum: [0, 1, 2]
+      description: 0=DontKnow, 1=StillLearning, 2=KnowKnow.
+
+    RateCardRequest:
+      type: object
+      required: [cardId, rating]
+      properties:
+        cardId: { type: string, format: uuid }
+        rating: { $ref: "#/components/schemas/CardRating" }
+
+    RatedCard:
+      type: object
+      required: [sessionId, cardId, rating, ratedAt]
+      properties:
+        sessionId: { type: string, format: uuid }
+        cardId: { type: string, format: uuid }
+        rating: { $ref: "#/components/schemas/CardRating" }
+        ratedAt: { type: string, format: date-time }
+
+    PracticeResults:
+      type: object
+      required: [sessionId, deckId, mode, countDontKnow, countStillLearning, countKnowKnow, ratedCards]
+      properties:
+        sessionId: { type: string, format: uuid }
+        deckId: { type: string, format: uuid }
+        mode: { $ref: "#/components/schemas/PracticeSessionMode" }
+        countDontKnow: { type: integer, minimum: 0 }
+        countStillLearning: { type: integer, minimum: 0 }
+        countKnowKnow: { type: integer, minimum: 0 }
+        ratedCards:
+          type: array
+          items: { $ref: "#/components/schemas/RatedCard" }
+        completedAt: { type: string, format: date-time }
+
+    CardProgress:
+      type: object
+      required: [cardId, rating, lastRatedAt]
+      properties:
+        cardId: { type: string, format: uuid }
+        rating: { $ref: "#/components/schemas/CardRating" }
+        lastRatedAt: { type: string, format: date-time }
+
+    UserDeckProgress:
+      type: object
+      required: [deckId, cardProgress]
+      properties:
+        deckId: { type: string, format: uuid }
+        cardProgress:
+          type: array
+          items: { $ref: "#/components/schemas/CardProgress" }
