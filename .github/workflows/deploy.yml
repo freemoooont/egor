@@ -1,0 +1,113 @@
+name: deploy-prod
+
+# Push to `main` builds the frontend + backend artifacts and ships them to the
+# single VDSina production server over SSH (password auth via sshpass).
+# Manual runs are also allowed via `workflow_dispatch`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Deploys must queue, never preempt — a half-applied deploy is worse than a slow
+# one. `cancel-in-progress: false` makes parallel runs wait their turn.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Pinned to match backend/go.mod:3
+      GO_VERSION: "1.25.0"
+      # Pinned to match frontend/package.json `packageManager` (pnpm@10.33.0).
+      PNPM_VERSION: "10.33.0"
+      # No `engines` field in package.json; pin to the current Node LTS that
+      # ships with @types/node ^25 used in devDependencies.
+      NODE_VERSION: "22"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---------- Backend ----------
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Backend unit tests
+        # Integration tests are guarded by `//go:build integration` (see
+        # backend/internal/infrastructure/postgres/testdb/postgres.go and
+        # backend/internal/interfaces/http/smoke_integration_test.go).
+        # The default tag set therefore runs unit tests only — no Docker
+        # required on the runner.
+        working-directory: backend
+        run: go test ./... -count=1
+
+      - name: Backend build (linux/amd64, static)
+        working-directory: backend
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" -o ./bin/api ./cmd/api
+
+      # ---------- Frontend ----------
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Frontend install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+
+      - name: Frontend build
+        # `pnpm build` runs `tsc -b && vp build`; vite-plus writes to dist/
+        # per frontend/vite.config.ts (`build.outDir: 'dist'`).
+        working-directory: frontend
+        run: pnpm build
+
+      # ---------- Deploy ----------
+      - name: Install deploy tools
+        # ubuntu-latest already has rsync + openssh-client; sshpass is the
+        # only extra binary we need to drive password-auth SSH non-interactively.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: Trust SSH host key
+        # Pre-populate known_hosts so ssh/scp/rsync don't prompt and don't fail
+        # with StrictHostKeyChecking. The secret is the bare host (no user, no
+        # port) — `ssh-keyscan` accepts that form.
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
+        run: bash scripts/deploy.sh
