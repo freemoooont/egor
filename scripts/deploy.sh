@@ -76,7 +76,25 @@ step "Sync migrations → /opt/micocards/migrations/"
 ssh_run "mkdir -p /opt/micocards/migrations"
 rsync_to "backend/migrations/" "/opt/micocards/migrations/"
 
-# --- 4. apply migrations (goose, per-context order) -----------------------
+# --- 4. ensure goose is on the server -------------------------------------
+# docs/stack.md assumes goose is present, but a fresh server may not have it.
+# Idempotent fetch of the pinned linux/amd64 release binary into /usr/local/bin.
+GOOSE_VERSION="v3.27.1"
+step "Ensure goose ${GOOSE_VERSION} installed at /usr/local/bin/goose"
+ssh_run "bash -se" <<REMOTE_GOOSE
+set -euo pipefail
+if command -v goose >/dev/null 2>&1; then
+    echo "goose already present: \$(goose -version 2>&1 | head -1)"
+    exit 0
+fi
+echo "goose missing — downloading ${GOOSE_VERSION}"
+curl -fsSL -o /usr/local/bin/goose \
+    "https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_linux_x86_64"
+chmod +x /usr/local/bin/goose
+goose -version
+REMOTE_GOOSE
+
+# --- 5. apply migrations (goose, per-context order) -----------------------
 # DATABASE_URL is held in /opt/micocards/env/api.env (chmod 600, owned by
 # www-data) per docs/stack.md. We source it into the SSH shell only for the
 # goose invocation so it never has to be exported by the CI runner.
